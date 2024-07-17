@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        *{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body{
+            height: 646px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgb(255, 255, 255);
+        }
+        .paymentform{
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 30px;
+            width: 30%;
+            height: 90%;
+            padding: 20px 0;
+            background-color: #fff;
+            box-shadow: 1px 1px 10px rgb(11, 119, 1);
+        }
+        .paymentform>img{
+            height: auto;
+            width: 50%;
+        }
+        .paymentform>input{
+            width: 80%;
+            height: 30px;
+            border: none;
+            border-bottom: 2px solid rgb(241, 212, 173);
+            font-size: 1.2rem;
+            outline: none;
+            color: rgb(11, 161, 6);
+            padding: 0 5px;
+        }
+        .paymentform>input[type='submit']{
+            width: 50%;
+            border: 2px solid rgb(241, 212, 173);;
+        }
+        .paymentform>input[type='submit']:hover{
+            box-shadow: 1px 1px 5px rgb(3, 172, 59);
+            transition: 0.5s;
+            cursor: pointer;
+        }
+        .loader{
+            display: none;
+            width: 35px;
+            height: 35px;
+            border-top: 4px dotted green;
+            border-left: 4px dotted yellowgreen;
+            border-bottom: 3px dotted rgb(205, 195, 50);
+            border-right: 3px dotted yellow;
+            border-radius: 50%;
+            animation: load 1s infinite linear;
+        }
+        @keyframes load{
+            0%{
+                transform: rotate(0deg);
+            }
+            100%{
+                transform: rotate(360deg);
+            }
+        }
+        #id-success-image{
+            height: auto;
+            width: 70%;
+        }
+        .message-modal{
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            justify-content: center;
+            align-items: flex-start;
+            z-index: 1000;
+        }
+        .message-modal>p{
+            width: 40%;
+            padding: 30px 10px;
+            font-size: 25px;
+            font-style: oblique;
+            border-radius: 20px;
+            text-align: center;
+            line-height: 1.2;
+            color: #521301;
+            background-color: #cec9c7;
+        }
+    </style>
+</head>
+<body id="body">
+    <form method="post" action="#" class="paymentform" id="paymentform">
+        <img src="https://th.bing.com/th/id/OIP.hU5JWeU_1WguktuIkXdeVAAAAA?rs=1&pid=ImgDetMain" id="id-form-image">
+        <img src="https://www.indiaesevakendra.in/wp-content/uploads/2020/08/Paymentsuccessful21.png" id="id-success-image" style="display: none;">
+        <div class="loader" id="id-loader"></div>
+        {{customer.name}}
+        {{customer.email}}
+        {{customer.number}}
+        {{transaction.amount}}
+        {% csrf_token %}
+        <input type="submit" value="PAY">
+        </form>
+        <!--I want to create a reusable modal for displaying one time messages to the user when there is need. -->
+        <div class="message-modal" id="id-message-modal">
+            <!--In here, I append any message I want by giving it as an argument to the function that show this modal. -->
+        </div>
+    <script>        
+        function messageModal(message){
+            modal = $('#id-message-modal')
+            modal.append('<p>' + message + '</p>')
+            modal.css('display', 'flex').hide().slideDown(2000)
+            setTimeout(function(){
+                modal.slideUp(2000)
+                modal.empty();
+            }, 3000)
+            modal.on('click', function(e){
+                if(!$(e.target).closest('p').length){
+                    modal.slideUp(2000)
+                    modal.empty();
+                }
+            })
+        }
+
+        $(document).ready(function(){
+            $('#paymentform').css('display', 'flex').hide().slideDown(1500);
+            /* I use the function below to send request to the checkStatus view in the backend. It sends a request after every 3 seconds until response from the backend satisfies a certain criteria. */
+            function checkStatus(checkout_id){
+                $.ajax({
+                    type: 'GET',
+                    url: "{% url 'checkstatus' %}",
+                    data: {'checkout_id': checkout_id},
+                    dataType: 'json',
+                    success: function(response){
+                        if(response.success){
+                            $('#id-loader').hide();
+                            $('#id-form-image').hide();
+                            $('#id-success-image').show();
+                        }else if(response.failed == 'Transaction failed'){
+                            $('#id-loader').hide();
+                            message = 'Payment failed, kindly check payment details and try again!'
+                            messageModal(message)
+                        }
+                        else{
+                            setTimeout(function(){
+                                checkStatus(checkout_id); /* I use function recursion to give this function the ability to make multiple calls until a certain criteria is met. */
+                           }, 6000);
+                        }
+                    },
+                    error: function(xhr, errorMsg, err){
+                        console.log(xhr.status + ':' +  xhr.responseText)
+                    }
+                })
+            }
+            $('#paymentform').on('submit', function(e){
+                e.preventDefault();
+                formData = $('#paymentform').serialize();
+                $('#id-loader').show();
+                $.ajax({
+                    type: 'POST',
+                    url: "{% url 'stkpush' %}",
+                    data: formData,
+                    dataType: 'json',
+                    success: function(response){
+                        if(response.success){
+                            checkStatus(response.checkout_id); /* This passes the checkout_id to the checkStatus function which in turn passes it to the checkStatus view in the backend via an ajax request. */
+                        }else{
+                            $('#id-loader').hide();
+                            alert('We were unable to process your payment, please confirm your payment details and try again.') /* If response does not contain success, then we inform the user to try again. */
+                        }
+                    },
+                    error: function(xhr, errorMsg, err){
+                        console.log(xhr.status + ':' + xhr.responseText)
+                    },
+                });
+            });
+        });
+   
+    </script>
+</body>
+</html>
